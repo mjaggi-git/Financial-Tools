@@ -1,139 +1,95 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import warnings
-# Deaktiviere Warnungen für saubere Ausgabe
-warnings.filterwarnings("ignore", category=RuntimeWarning)
+import seaborn as sns
 
-# ==============================================================================
-# 1. KONFIGURATION
-# ==============================================================================
-# Eingaben basierend auf den vom Benutzer bereitgestellten Werten, 
-# aber korrigiert für Floats und Potenzierung.
+class LombardRiskSimulator:
+    def __init__(self, loan_sum=50000, loan_interest=0.04, duration_yrs=5, 
+                 portfolio_value=390000, margin_level=0.6, job_loss_risk=0.05, 
+                 volatility=0.15, repeats=5000):
+        self.loan_sum = loan_sum
+        self.loan_interest = loan_interest
+        self.duration_yrs = duration_yrs
+        self.portfolio_start = portfolio_value + loan_sum
+        self.margin_threshold = portfolio_value * margin_level
+        self.job_loss_risk = job_loss_risk
+        self.volatility = volatility
+        self.repeats = repeats
+        self.results_df = None
 
-# Hinweis: Die Eingabe über input() wurde entfernt, um das Skript 
-# direkt ausführbar und reproduzierbar zu machen.
-
-# *Kredit- und Basisparameter*
-SUM_LOMB = 50000.0          # Lombardkreditbetrag
-INTEREST_LOMB = 0.04        # 4% Jahreszins (als Float)
-DURATION_LOMB = 5           # Dauer in Jahren
-CURRENT_PORTFOLIO = 50000.0 # Eigenkapital
-TOTAL_INVESTED = SUM_LOMB + CURRENT_PORTFOLIO
-
-# *Risiko-Parameter*
-CHANCE_BEING_FIRED_ANNUAL = 0.05 # 5% jährliches Risiko für Jobverlust
-YEARLY_VOLATILITY = 0.15    # Jährliche Volatilität (Standardabweichung)
-MAINTENANCE_MARGIN = 0.35   # 35% Maintenance Margin (vom Portfolio)
-
-# *Simulation & Szenarien*
-REPEATS = 2500
-SEED = 42
-
-# **Die zu analysierenden Regime:** Erwartete jährliche Rendite des Investments
-SCENARIOS_MEAN_RETURN = {
-    "Regime_1 (Niedrig)": 0.03, # 3% erwartete Rendite
-    "Regime_2 (Mittel)": 0.05, # 5% erwartete Rendite
-    "Regime_3 (Hoch)": 0.08    # 8% erwartete Rendite
-}
-# ==============================================================================
-
-
-def calculate_lombard_profit_probability(mean_return: float):
-    """
-    Führt die Monte Carlo Simulation für ein einzelnes Rendite-Regime durch.
-    Beinhaltet das Risiko des Margin Calls bei Jobverlust.
-    """
-    
-    np.random.seed(SEED)
-
-    # Korrekte Berechnung des Gesamtkredit-Endwerts (L_T) mit Float-Potenzierung
-    total_loan_repayment = SUM_LOMB * ((1 + INTEREST_LOMB) ** DURATION_LOMB)
-    
-    # Schwellenwert für die Zwangsliquidation (Margin Call)
-    # Portfolio-Wert, bei dem die Sicherheitsanforderungen verletzt werden:
-    liquidation_threshold = SUM_LOMB / (1 - MAINTENANCE_MARGIN)
-
-    net_terminal_values = []
-
-    for _ in range(REPEATS):
-        current_portfolio_value = TOTAL_INVESTED
+    def run_simulation(self, regimes):
+        simulation_data = {}
         
-        # Jede Iteration ist ein Jahr
-        for year in range(1, DURATION_LOMB + 1):
+        for name, mean_return in regimes.items():
+            net_values = []
+            liquidations = 0
             
-            # --- 1. Marktentwicklung (Geometrische Brownsche Bewegung) ---
-            # Rendite wird aus Normalverteilung gezogen
-            yearly_return = np.random.normal(mean_return, YEARLY_VOLATILITY)
-            current_portfolio_value *= (1 + yearly_return)
-            
-            # --- 2. Risiko-Event Prüfung (Jobverlust & Margin Call) ---
-            
-            # Jährliches Risiko: Job verloren?
-            is_job_lost = np.random.rand() < CHANCE_BEING_FIRED_ANNUAL
-            
-            # Prüfung auf Margin Call Level
-            is_below_margin = current_portfolio_value < liquidation_threshold
+            for _ in range(self.repeats):
+                current_val = self.portfolio_start
+                liquidated = False
+                
+                for year in range(1, self.duration_yrs + 1):
+                    yearly_return = np.random.normal(mean_return, self.volatility)
+                    current_val *= (1 + yearly_return)
+                    
+                    is_job_lost = np.random.rand() < self.job_loss_risk
+                    is_below_margin = current_val < self.margin_threshold
 
-            if is_job_lost and is_below_margin:
-                # Zwangsliquidation: Trade wird beendet
+                    if is_job_lost and is_below_margin:
+                        loan_at_t = self.loan_sum * ((1 + self.loan_interest) ** year)
+                        net_values.append(current_val - loan_at_t)
+                        liquidations += 1
+                        liquidated = True
+                        break
                 
-                # Zinsen bis zum Liquidation-Jahr berechnen
-                loan_value_t = SUM_LOMB * ((1 + INTEREST_LOMB) ** year)
-                net_value = current_portfolio_value - loan_value_t
-                net_terminal_values.append(net_value)
-                
-                # Beende diese Simulation (Break)
-                break
+                if not liquidated:
+                    total_repayment = self.loan_sum * ((1 + self.loan_interest) ** self.duration_yrs)
+                    net_values.append(current_val - total_repayment)
+
+            simulation_data[name] = np.array(net_values)
         
-        # --- Normaler Abschluss der Laufzeit (falls keine Liquidation) ---
-        else:
-            # Die volle Laufzeit wurde erreicht
-            net_value = current_portfolio_value - total_loan_repayment
-            net_terminal_values.append(net_value)
+        self.results_df = pd.DataFrame(simulation_data)
+        return self._summarize(regimes)
 
-    # Ergebnisse auswerten
-    final_results = np.array(net_terminal_values)
-    
-    # 1. Profitwahrscheinlichkeit (Netto-Gewinn > 0)
-    profitable_runs = np.sum(final_results > 0)
-    profit_probability = profitable_runs / REPEATS
-    
-    # 2. Value at Risk (VaR) - 5% Perzentil (Worst 5% Runs)
-    var_95 = np.percentile(final_results, 5)
-    
-    # 3. Erwarteter Wert (Mean)
-    mean_net_value = np.mean(final_results)
+    def _summarize(self, regimes):
+        summary = {}
+        for name in regimes.keys():
+            data = self.results_df[name]
+            summary[name] = {
+                "Profit Prob.": f"{(data > self.portfolio_start - self.loan_sum).mean():.2%}",
+                "Expected Value": f"{data.mean():,.0f} CHF",
+                "VaR 95%": f"{np.percentile(data, 5):,.0f} CHF",
+                "Liquidation Risk": f"{(self.results_df[name] < self.margin_threshold).mean():.2%}"
+            }
+        return pd.DataFrame(summary).T
 
-    # 4. Zwangsliquidationen
-    liquidation_count = np.sum(final_results < (liquidation_threshold - SUM_LOMB)) 
-    
-    return profit_probability, mean_net_value, var_95, liquidation_count
+    def plot_results(self):
+        sns.set_theme(style="whitegrid")
+        plt.figure(figsize=(12, 7))
+        
+        colors = ["#2ecc71", "#3498db", "#e74c3c"]
+        for i, col in enumerate(self.results_df.columns):
+            sns.kdeplot(self.results_df[col], fill=True, label=col, color=colors[i], alpha=0.5)
 
+        plt.axvline(x=self.portfolio_start - self.loan_sum, color='black', linestyle='--', label='Break-even')
+        plt.title("Monte Carlo Simulation: Lombard Credit Risk Scenarios", fontsize=16)
+        plt.xlabel("Net Portfolio Value after 5 Years (CHF)", fontsize=12)
+        plt.ylabel("Probability Density", fontsize=12)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
 
 if __name__ == "__main__":
+    regimes = {
+        "Low Return (3%)": 0.03,
+        "Mid Return (5%)": 0.05,
+        "High Return (8%)": 0.08
+    }
+
+    simulator = LombardRiskSimulator(repeats=10000)
+    summary_stats = simulator.run_simulation(regimes)
     
-    results = {}
+    print("\n--- Simulation Summary Statistics ---")
+    print(summary_stats)
     
-    print("--- Lombardkredit Szenarioanalyse gestartet ---")
-    print(f"Basis-Parameter: Kredit {SUM_LOMB:,.0f} @ {INTEREST_LOMB*100}% für {DURATION_LOMB} Jahre.")
-    print(f"Jobverlust-Risiko: {CHANCE_BEING_FIRED_ANNUAL*100}% p.a. | Investment Volatilität: {YEARLY_VOLATILITY*100}%.")
-    print("-" * 50)
-    
-    # Iteration über alle definierten Rendite-Regime
-    for scenario_name, mean_return in SCENARIOS_MEAN_RETURN.items():
-        prob, mean_val, var, liq_count = calculate_lombard_profit_probability(mean_return)
-        
-        results[scenario_name] = {
-            "Erwartete Rendite": f"{mean_return:.1%}",
-            "Profitwahrscheinlichkeit": f"{prob:.2%}",
-            "Erwarteter Netto-Gewinn": f"{mean_val:,.0f} CHF",
-            "VaR 95% (Worst 5%)": f"{var:,.0f} CHF",
-            "Zwangsliquidationen": f"{liq_count} Runs"
-        }
-        
-    # Ergebnisse als DataFrame anzeigen
-    df_results = pd.DataFrame.from_dict(results, orient='index')
-    print("\nERGEBNISSE DER REGIME-SIMULATION (2500 Runs pro Szenario):")
-    print(df_results)
-    plt.show(calculate_lombard_profit_probability, mean)
+    simulator.plot_results()
