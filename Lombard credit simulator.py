@@ -1,9 +1,30 @@
-# This python file does simulate a leveraged portfolio with the the inclusion of likeiyhood of being fired (absence of steady main cash flow)
+"""
+Stochastic Risk Assessment of Leveraged Equity Portfolios with Monte Carlo Simulations
 
+PURPOSE:
+This framework evaluates the viability of a Lombard-financed investment strategy 
+under varying market return regimes. It quantifies the probability of profit and systemic 
+risk by simulating the interplay between market volatility and idiosyncratic shocks.
 
+KEY FUNCTIONALITIES:
+- Regime-Based Simulation: Models outcomes across 'Low', 'Mid', and 'High' return expectations.
+- Dual-Risk Integration: Simultaneously accounts for market drawdown (Value at Risk) 
+  and personal liquidity crises (simulated via an annual job-loss probability).
+- Liquidation Logic: Implements a trigger where a margin call 
+  combined with a cash-flow interruption leads to forced terminal liquidation.
 
+USE CASES:
+- Stress-testing personal financial strategies against 'Black Swan' combinations.
+- Quantitative decision support for determining optimal leverage ratios.
 
-
+LIMITATIONS & ASSUMPTIONS:
+- Normality Assumption: Returns are modeled using a normal distribution, which 
+  may underestimate 'fat-tail' risks (kurtosis) present in real financial markets.
+- Static Parameters: Assumes constant volatility and job-loss probability over 
+  the 5-year duration, not accounting for cyclical economic shifts.
+- Tax & Slippage: Does not account for capital gains tax, transaction costs, 
+  or the 'bid-ask' spread during forced liquidation.
+"""
 
 import numpy as np
 import pandas as pd
@@ -100,4 +121,5 @@ if __name__ == "__main__":
     print(summary_stats)
     
     simulator.plot_results()
+
 
