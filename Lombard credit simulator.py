@@ -1,3 +1,10 @@
+# This python file does simulate a leveraged portfolio with the the inclusion of likeiyhood of being fired (absence of steady main cash flow)
+
+
+
+
+
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -73,7 +80,7 @@ class LombardRiskSimulator:
 
         plt.axvline(x=self.portfolio_start - self.loan_sum, color='black', linestyle='--', label='Break-even')
         plt.title("Monte Carlo Simulation: Lombard Credit Risk Scenarios", fontsize=16)
-        plt.xlabel("Net Portfolio Value after 5 Years (CHF)", fontsize=12)
+        plt.xlabel("Net Portfolio Value in Mio. (CHF) after 5 Years", fontsize=12)
         plt.ylabel("Probability Density", fontsize=12)
         plt.legend()
         plt.tight_layout()
@@ -93,3 +100,4 @@ if __name__ == "__main__":
     print(summary_stats)
     
     simulator.plot_results()
+
